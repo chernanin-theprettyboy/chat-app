@@ -10,8 +10,10 @@
     .msg { margin-bottom: 8px; }
     .msg b { margin-right: 4px; }
     .chat-img { display: block; max-width: 100%; max-height: 300px; margin-top: 4px; border-radius: 8px; }
+    .chat-audio { display: block; max-width: 100%; margin-top: 4px; }
     #controls { display: flex; gap: 8px; }
     #text { flex: 1; padding: 8px; }
+    #recBtn.recording { background: #e53935; color: white; }
   </style>
 </head>
 <body>
@@ -23,6 +25,7 @@
     <input id="text" placeholder="Type a message...">
     <button id="picBtn" title="Send a picture">📷</button>
     <input id="picInput" type="file" accept="image/*" hidden>
+    <button id="recBtn" title="Record a voice message">🎤</button>
     <button id="send">Send</button>
   </div>
 
@@ -37,6 +40,16 @@
     const messagesDiv = document.getElementById('messages');
     const textInput = document.getElementById('text');
     const picInput = document.getElementById('picInput');
+    const recBtn = document.getElementById('recBtn');
+
+    // ---------- Helpers ----------
+    function getUsername() {
+      return document.getElementById('username').value.trim() || 'Anonymous';
+    }
+
+    function uniqueName(ext) {
+      return Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext;
+    }
 
     // ---------- Showing messages ----------
     function showMessage(m) {
@@ -56,6 +69,12 @@
           messagesDiv.scrollTop = messagesDiv.scrollHeight;
         });
         div.append(img);
+      } else if (m.kind === 'voice') {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = m.file_url;
+        audio.className = 'chat-audio';
+        div.append(audio);
       } else {
         const body = document.createElement('span');
         body.textContent = m.content;
@@ -74,26 +93,27 @@
 
     // ---------- Sending text ----------
     async function sendText() {
-      const username = document.getElementById('username').value.trim() || 'Anonymous';
       const text = textInput.value.trim();
       if (!text) return;
 
-      const { error } = await db.from('messages').insert({ username, kind: 'text', content: text });
+      const { error } = await db.from('messages').insert({
+        username: getUsername(),
+        kind: 'text',
+        content: text
+      });
       if (error) { alert(error.message); return; }
       textInput.value = '';
     }
 
     // ---------- Sending pictures ----------
     async function sendImage(file) {
-      const username = document.getElementById('username').value.trim() || 'Anonymous';
-
       if (file.size > 5 * 1024 * 1024) {
         alert('Picture is too big. Please choose one under 5 MB.');
         return;
       }
 
       const ext = file.name.split('.').pop();
-      const path = Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext;
+      const path = uniqueName(ext);
 
       const { error: uploadError } = await db.storage.from('uploads').upload(path, file);
       if (uploadError) { alert(uploadError.message); return; }
@@ -101,11 +121,79 @@
       const { data } = db.storage.from('uploads').getPublicUrl(path);
 
       const { error } = await db.from('messages').insert({
-        username,
+        username: getUsername(),
         kind: 'image',
         file_url: data.publicUrl
       });
       if (error) alert(error.message);
+    }
+
+    // ---------- Sending voice ----------
+    let recorder = null;
+    let chunks = [];
+
+    async function sendVoice(blob) {
+      if (blob.size > 5 * 1024 * 1024) {
+        alert('Voice message is too big.');
+        return;
+      }
+
+      const type = (blob.type || 'audio/webm').split(';')[0];
+      const ext = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+      const path = 'voice-' + uniqueName(ext);
+
+      const { error: uploadError } = await db.storage.from('uploads').upload(path, blob, { contentType: type });
+      if (uploadError) { alert(uploadError.message); return; }
+
+      const { data } = db.storage.from('uploads').getPublicUrl(path);
+
+      const { error } = await db.from('messages').insert({
+        username: getUsername(),
+        kind: 'voice',
+        file_url: data.publicUrl
+      });
+      if (error) alert(error.message);
+    }
+
+    async function toggleRecording() {
+      // If already recording, this click stops it.
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop();
+        return;
+      }
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        alert('Microphone not available: ' + err.message);
+        return;
+      }
+
+      chunks = [];
+      const thisRecorder = new MediaRecorder(stream);
+      recorder = thisRecorder;
+
+      thisRecorder.addEventListener('dataavailable', e => {
+        if (e.data.size > 0) chunks.push(e.data);
+      });
+
+      thisRecorder.addEventListener('stop', async () => {
+        stream.getTracks().forEach(track => track.stop());
+        recBtn.classList.remove('recording');
+        recBtn.textContent = '🎤';
+        const blob = new Blob(chunks, { type: thisRecorder.mimeType });
+        await sendVoice(blob);
+      });
+
+      thisRecorder.start();
+      recBtn.classList.add('recording');
+      recBtn.textContent = '⏹';
+
+      // Safety: stop automatically after 60 seconds.
+      setTimeout(() => {
+        if (thisRecorder.state === 'recording') thisRecorder.stop();
+      }, 60000);
     }
 
     // ---------- Buttons and keys ----------
@@ -113,13 +201,14 @@
     textInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 
     document.getElementById('picBtn').addEventListener('click', () => picInput.click());
-
     picInput.addEventListener('change', async () => {
       const file = picInput.files[0];
       if (!file) return;
       await sendImage(file);
       picInput.value = '';
     });
+
+    recBtn.addEventListener('click', toggleRecording);
 
     // ---------- Realtime ----------
     db.channel('chat')
