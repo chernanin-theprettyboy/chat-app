@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>My Chat App</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0084ff">
@@ -12,7 +12,7 @@
     :root { --blue: #0084ff; --bg: #f0f2f5; --card: #fff; --text: #1c1e21; --muted: #65676b; --bubble: #e4e6eb; --line: #dadde1; }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    body { margin: 0; height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    body { margin: 0; height: 100vh; height: 100dvh; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
     button, input { font: inherit; }
     button { cursor: pointer; }
 
@@ -29,7 +29,7 @@
     #authMsg { min-height: 1.2em; margin: 8px 0 0; font-size: .9rem; color: #d93025; }
 
     /* ---------- Main app ---------- */
-    #app { display: flex; height: 100vh; }
+    #app { display: flex; height: 100vh; height: 100dvh; }
     #sidebar { width: 320px; display: flex; flex-direction: column; background: var(--card); border-right: 1px solid var(--line); }
     .me { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
     #myAvatar { cursor: pointer; }
@@ -54,9 +54,9 @@
     .del { border: 0; background: none; opacity: 0; }
     .row:hover .del { opacity: .8; }
     .chat-img { display: block; max-width: 100%; max-height: 280px; border-radius: 12px; }
-    audio { display: block; max-width: 100%; }
+    audio { display: block; width: 240px; max-width: 100%; }
 
-    #controls { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--card); border-top: 1px solid var(--line); }
+    #controls { display: flex; align-items: center; gap: 8px; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line); }
     #text { flex: 1; padding: 10px 16px; border: 0; border-radius: 20px; background: var(--bg); }
     .icon { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--bg); font-size: 1.1rem; }
     .icon.recording { background: #e53935; color: #fff; }
@@ -73,11 +73,20 @@
     .mini { padding: 5px 12px; border: 0; border-radius: 14px; background: var(--blue); color: #fff; font-size: .8rem; }
     .mini.grey { background: var(--bubble); color: var(--text); }
 
+    #backBtn { display: none; border: 0; background: none; padding: 0 10px 0 0; font-size: 1.6rem; line-height: 1; color: var(--blue); }
+
     @media (max-width: 700px) {
-      #sidebar { width: 72px; }
-      .side-text { display: none; }
-      .me, .item { justify-content: center; padding-left: 0; padding-right: 0; }
+      #sidebar { width: 100%; border-right: 0; }
+      #chat { display: none; }
+      #app.in-chat #sidebar { display: none; }
+      #app.in-chat #chat { display: flex; }
+      #backBtn { display: inline-block; }
+      .row { max-width: 88%; }
+      input { font-size: 16px; }
     }
+
+    /* Phones have no hover, so always show the delete button */
+    @media (hover: none) { .del { opacity: .6; } }
   </style>
 </head>
 <body>
@@ -116,7 +125,7 @@
     </aside>
 
     <main id="chat">
-      <header><span id="chatTitle">Public room</span> <button id="logout" class="link">Log out</button></header>
+      <header><span><button id="backBtn" title="Back to chats">‹</button><span id="chatTitle">Public room</span></span> <button id="logout" class="link">Log out</button></header>
       <div id="messages"></div>
       <div id="controls">
         <button id="picBtn" class="icon" title="Send a picture">📷</button>
@@ -247,6 +256,8 @@
       $('auth').hidden = false;
       $('search').value = '';
       $('results').innerHTML = '';
+      stopAudio();
+      $('app').classList.remove('in-chat');
       currentChat = { id: null, title: 'Public room', friend: null };
       friendships = [];
       me = null;
@@ -433,6 +444,8 @@
 
     async function openChat(id, title, friend) {
       currentChat = { id, title, friend };
+      stopAudio();
+      $('app').classList.add('in-chat');
       $('chatTitle').textContent = title;
       $('messages').innerHTML = '';
       renderSocial();
@@ -536,6 +549,15 @@
     $('authGo').addEventListener('click', submitAuth);
     $('password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
     $('logout').addEventListener('click', () => db.auth.signOut());
+    $('backBtn').addEventListener('click', () => $('app').classList.remove('in-chat'));
+
+    // Only one voice message plays at a time
+    function stopAudio() {
+      document.querySelectorAll('audio').forEach(a => a.pause());
+    }
+    document.addEventListener('play', e => {
+      document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); });
+    }, true);
     $('search').addEventListener('input', searchPeople);
 
     $('send').addEventListener('click', sendText);
