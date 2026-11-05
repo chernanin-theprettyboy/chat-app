@@ -3,164 +3,348 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chat App</title>
+  <title>My Chat App</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
-    #messages { border: 1px solid #ccc; height: 400px; overflow-y: auto; padding: 8px; margin: 8px 0; }
-    .msg { margin-bottom: 8px; }
-    .msg b { margin-right: 4px; }
-    .chat-img { display: block; max-width: 100%; max-height: 300px; margin-top: 4px; border-radius: 8px; }
-    .chat-audio { display: block; max-width: 100%; margin-top: 4px; }
-    #controls { display: flex; gap: 8px; }
-    #text { flex: 1; padding: 8px; }
-    #recBtn.recording { background: #e53935; color: white; }
+    :root { --blue: #0084ff; --bg: #f0f2f5; --card: #fff; --text: #1c1e21; --muted: #65676b; --bubble: #e4e6eb; --line: #dadde1; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    /* ---------- Log in / sign up screen ---------- */
+    #auth { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+    .card { width: 100%; max-width: 380px; padding: 28px; background: var(--card); border-radius: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, .1); }
+    .card h1 { margin: 0 0 4px; color: var(--blue); }
+    .card p { margin: 0 0 16px; color: var(--muted); }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tabs button { flex: 1; padding: 8px; border: 0; border-radius: 8px; background: var(--bg); }
+    .tabs button.on { background: var(--blue); color: #fff; }
+    .card input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 10px; }
+    .primary { width: 100%; padding: 12px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 600; }
+    #authMsg { min-height: 1.2em; margin: 8px 0 0; font-size: .9rem; color: #d93025; }
+
+    /* ---------- Main app ---------- */
+    #app { display: flex; height: 100vh; }
+    #sidebar { width: 320px; display: flex; flex-direction: column; background: var(--card); border-right: 1px solid var(--line); }
+    .me { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+    #myAvatar { cursor: pointer; }
+    .av { width: 44px; height: 44px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 700; object-fit: cover; }
+    .av.sm { width: 28px; height: 28px; font-size: .8rem; }
+    .me small { display: block; color: var(--muted); }
+    .title { padding: 16px 16px 8px; font-size: 1.2rem; font-weight: 700; }
+    .chat-item { display: flex; align-items: center; gap: 12px; margin: 0 8px; padding: 10px; border-radius: 10px; }
+    .chat-item.active { background: #e7f3ff; }
+    .chat-item small { display: block; color: var(--muted); }
+
+    #chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    #chat header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--card); border-bottom: 1px solid var(--line); font-weight: 700; }
+    .link { border: 0; background: none; padding: 0; color: var(--blue); font-weight: 400; }
+    #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 16px; }
+    .row { max-width: 75%; display: flex; align-items: flex-end; gap: 8px; }
+    .row.mine { align-self: flex-end; flex-direction: row-reverse; }
+    .bubble { padding: 8px 12px; border-radius: 18px; background: var(--bubble); word-break: break-word; }
+    .mine .bubble { background: var(--blue); color: #fff; }
+    .who { margin-bottom: 2px; font-size: .75rem; color: var(--muted); }
+    .time { margin-top: 2px; font-size: .7rem; opacity: .7; }
+    .del { border: 0; background: none; opacity: 0; }
+    .row:hover .del { opacity: .8; }
+    .chat-img { display: block; max-width: 100%; max-height: 280px; border-radius: 12px; }
+    audio { display: block; max-width: 100%; }
+
+    #controls { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--card); border-top: 1px solid var(--line); }
+    #text { flex: 1; padding: 10px 16px; border: 0; border-radius: 20px; background: var(--bg); }
+    .icon { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--bg); font-size: 1.1rem; }
+    .icon.recording { background: #e53935; color: #fff; }
+    #send { padding: 10px 18px; border: 0; border-radius: 20px; background: var(--blue); color: #fff; font-weight: 600; }
+
+    @media (max-width: 700px) {
+      #sidebar { width: 72px; }
+      .side-text { display: none; }
+      .me, .chat-item { justify-content: center; padding-left: 0; padding-right: 0; }
+    }
   </style>
 </head>
 <body>
-  <h1>My Chat App</h1>
-  <input id="username" placeholder="Your name">
-  <div id="messages"></div>
 
-  <div id="controls">
-    <input id="text" placeholder="Type a message...">
-    <button id="picBtn" title="Send a picture">📷</button>
-    <input id="picInput" type="file" accept="image/*" hidden>
-    <button id="recBtn" title="Record a voice message">🎤</button>
-    <button id="send">Send</button>
+  <!-- Log in / sign up -->
+  <div id="auth">
+    <div class="card">
+      <h1>My Chat App</h1>
+      <p>Log in or create an account to chat.</p>
+      <div class="tabs">
+        <button id="tabLogin" class="on">Log in</button>
+        <button id="tabSignup">Sign up</button>
+      </div>
+      <input id="suUser" placeholder="Username" autocomplete="username" hidden>
+      <input id="email" type="email" placeholder="Email" autocomplete="email">
+      <input id="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+      <button id="authGo" class="primary">Log in</button>
+      <p id="authMsg"></p>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" hidden>
+    <aside id="sidebar">
+      <div class="me">
+        <div id="myAvatar" title="Click to change your photo"></div>
+        <div class="side-text"><b id="myName"></b><small>Click photo to change</small></div>
+      </div>
+      <div class="title side-text">Chats</div>
+      <div class="chat-item active">
+        <div class="av">#</div>
+        <div class="side-text"><b>Public room</b><small>Everyone</small></div>
+      </div>
+    </aside>
+
+    <main id="chat">
+      <header>Public room <button id="logout" class="link">Log out</button></header>
+      <div id="messages"></div>
+      <div id="controls">
+        <button id="picBtn" class="icon" title="Send a picture">📷</button>
+        <input id="picInput" type="file" accept="image/*" hidden>
+        <button id="recBtn" class="icon" title="Record a voice message">🎤</button>
+        <input id="text" placeholder="Type a message...">
+        <button id="send">Send</button>
+      </div>
+      <input id="avatarInput" type="file" accept="image/*" hidden>
+    </main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // ---------- Connection ----------
-    const SUPABASE_URL = 'https://rxuomzlsocvmastvprfl.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_6slxlQG_i8mroPMK3qjY5g_tC-nrMRD';
-    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const db = supabase.createClient(
+      'https://rxuomzlsocvmastvprfl.supabase.co',
+      'sb_publishable_6slxlQG_i8mroPMK3qjY5g_tC-nrMRD'
+    );
 
-    // ---------- Page elements ----------
-    const messagesDiv = document.getElementById('messages');
-    const textInput = document.getElementById('text');
-    const picInput = document.getElementById('picInput');
-    const recBtn = document.getElementById('recBtn');
+    // ---------- Shared state and helpers ----------
+    const $ = id => document.getElementById(id);
+    const profiles = {};          // every known user, by id
+    let me = null;                // the logged-in user's profile
+    let channel = null;           // the realtime connection
+    let started = false;
+    let mode = 'login';
 
-    // ---------- Helpers ----------
-    function getUsername() {
-      return document.getElementById('username').value.trim() || 'Anonymous';
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text) e.textContent = text;
+      return e;
     }
 
     function uniqueName(ext) {
       return Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext;
     }
 
-    // ---------- Showing messages ----------
-    function showMessage(m) {
-      const div = document.createElement('div');
-      div.className = 'msg';
+    function avatarEl(p, fallback, small) {
+      const name = (p && p.username) || fallback || '?';
+      const cls = 'av' + (small ? ' sm' : '');
+      if (p && p.avatar_url) {
+        const img = el('img', cls);
+        img.src = p.avatar_url;
+        img.alt = name;
+        return img;
+      }
+      return el('div', cls, name[0].toUpperCase());
+    }
 
-      const name = document.createElement('b');
-      name.textContent = m.username + ':';
-      div.append(name);
+    // ---------- Log in / sign up ----------
+    function setMode(m) {
+      mode = m;
+      $('tabLogin').classList.toggle('on', m === 'login');
+      $('tabSignup').classList.toggle('on', m === 'signup');
+      $('suUser').hidden = m === 'login';
+      $('authGo').textContent = m === 'login' ? 'Log in' : 'Create account';
+      $('authMsg').textContent = '';
+    }
+
+    async function submitAuth() {
+      const email = $('email').value.trim();
+      const password = $('password').value;
+      const msg = $('authMsg');
+      msg.textContent = '';
+
+      if (mode === 'signup') {
+        const username = $('suUser').value.trim();
+        if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+          msg.textContent = 'Username: 3-20 letters, numbers or _';
+          return;
+        }
+        const { data, error } = await db.auth.signUp({
+          email, password, options: { data: { username } }
+        });
+        if (error) {
+          msg.textContent = /database error/i.test(error.message)
+            ? 'That username may already be taken.' : error.message;
+          return;
+        }
+        if (!data.session) msg.textContent = 'Account created. Check your email, then log in.';
+      } else {
+        const { error } = await db.auth.signInWithPassword({ email, password });
+        if (error) msg.textContent = error.message;
+      }
+    }
+
+    // ---------- Start and stop the app ----------
+    function renderMe() {
+      $('myAvatar').replaceChildren(avatarEl(me));
+      $('myName').textContent = me.username;
+    }
+
+    async function startApp(user) {
+      const { data, error } = await db.from('profiles').select('*');
+      if (error) { alert(error.message); started = false; return; }
+      data.forEach(p => { profiles[p.id] = p; });
+      me = profiles[user.id];
+      if (!me) { alert('Profile not found.'); started = false; return; }
+
+      renderMe();
+      $('auth').hidden = true;
+      $('app').hidden = false;
+      await loadMessages();
+
+      channel = db.channel('public-room')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async p => {
+          await ensureProfile(p.new.user_id);
+          showMessage(p.new);
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, p => {
+          removeMessageEl(p.old.id);
+        })
+        .subscribe();
+    }
+
+    function stopApp() {
+      if (channel) { db.removeChannel(channel); channel = null; }
+      $('messages').innerHTML = '';
+      $('password').value = '';
+      $('app').hidden = true;
+      $('auth').hidden = false;
+      me = null;
+    }
+
+    // Wait a tick before calling Supabase from inside this listener
+    db.auth.onAuthStateChange((event, session) => {
+      if (session && !started) {
+        started = true;
+        setTimeout(() => startApp(session.user), 0);
+      } else if (!session && started) {
+        started = false;
+        stopApp();
+      }
+    });
+
+    async function ensureProfile(id) {
+      if (!id || profiles[id]) return;
+      const { data } = await db.from('profiles').select('*').eq('id', id).single();
+      if (data) profiles[id] = data;
+    }
+
+    // ---------- Showing messages ----------
+    function removeMessageEl(id) {
+      const row = document.querySelector('[data-id="' + id + '"]');
+      if (row) row.remove();
+    }
+
+    function showMessage(m) {
+      const p = profiles[m.user_id];
+      const mine = m.user_id === me.id;
+
+      const row = el('div', 'row' + (mine ? ' mine' : ''));
+      row.dataset.id = m.id;
+      if (!mine) row.append(avatarEl(p, m.username, true));
+
+      const bubble = el('div', 'bubble');
+      if (!mine) bubble.append(el('div', 'who', (p && p.username) || m.username));
 
       if (m.kind === 'image') {
-        const img = document.createElement('img');
+        const img = el('img', 'chat-img');
         img.src = m.file_url;
-        img.alt = 'Picture from ' + m.username;
-        img.className = 'chat-img';
-        img.addEventListener('load', () => {
-          messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
-        div.append(img);
+        img.alt = 'Picture';
+        img.addEventListener('load', scrollDown);
+        bubble.append(img);
       } else if (m.kind === 'voice') {
         const audio = document.createElement('audio');
         audio.controls = true;
         audio.src = m.file_url;
-        audio.className = 'chat-audio';
-        div.append(audio);
+        bubble.append(audio);
       } else {
-        const body = document.createElement('span');
-        body.textContent = m.content;
-        div.append(body);
+        bubble.append(el('div', '', m.content));
       }
 
-      messagesDiv.appendChild(div);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      bubble.append(el('div', 'time', time));
+      row.append(bubble);
+
+      if (mine) {
+        const del = el('button', 'del', '🗑');
+        del.title = 'Delete for everyone';
+        del.addEventListener('click', () => deleteMessage(m));
+        row.append(del);
+      }
+
+      $('messages').append(row);
+      scrollDown();
+    }
+
+    function scrollDown() {
+      $('messages').scrollTop = $('messages').scrollHeight;
     }
 
     async function loadMessages() {
-      const { data, error } = await db.from('messages').select('*').order('created_at');
+      const { data, error } = await db.from('messages')
+        .select('*').order('created_at', { ascending: false }).limit(200);
       if (error) { console.error(error); return; }
-      data.forEach(showMessage);
+      data.reverse().forEach(showMessage);
     }
 
-    // ---------- Sending text ----------
+    // ---------- Sending ----------
+    async function send(fields) {
+      const { error } = await db.from('messages').insert(fields);
+      if (error) { alert(error.message); return false; }
+      return true;
+    }
+
+    async function uploadFile(file, folder, ext, type) {
+      const path = folder + '/' + uniqueName(ext);
+      const { error } = await db.storage.from('uploads').upload(path, file, type ? { contentType: type } : {});
+      if (error) throw error;
+      return { path, url: db.storage.from('uploads').getPublicUrl(path).data.publicUrl };
+    }
+
     async function sendText() {
-      const text = textInput.value.trim();
+      const text = $('text').value.trim();
       if (!text) return;
-
-      const { error } = await db.from('messages').insert({
-        username: getUsername(),
-        kind: 'text',
-        content: text
-      });
-      if (error) { alert(error.message); return; }
-      textInput.value = '';
+      if (await send({ kind: 'text', content: text })) $('text').value = '';
     }
 
-    // ---------- Sending pictures ----------
     async function sendImage(file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Picture is too big. Please choose one under 5 MB.');
-        return;
-      }
-
-      const ext = file.name.split('.').pop();
-      const path = uniqueName(ext);
-
-      const { error: uploadError } = await db.storage.from('uploads').upload(path, file);
-      if (uploadError) { alert(uploadError.message); return; }
-
-      const { data } = db.storage.from('uploads').getPublicUrl(path);
-
-      const { error } = await db.from('messages').insert({
-        username: getUsername(),
-        kind: 'image',
-        file_url: data.publicUrl
-      });
-      if (error) alert(error.message);
+      if (file.size > 5 * 1024 * 1024) { alert('Picture is too big. Please choose one under 5 MB.'); return; }
+      try {
+        const up = await uploadFile(file, 'images', file.name.split('.').pop());
+        await send({ kind: 'image', file_url: up.url, file_path: up.path });
+      } catch (e) { alert(e.message); }
     }
 
-    // ---------- Sending voice ----------
+    async function sendVoice(blob) {
+      if (blob.size > 5 * 1024 * 1024) { alert('Voice message is too big.'); return; }
+      const type = (blob.type || 'audio/webm').split(';')[0];
+      const ext = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+      try {
+        const up = await uploadFile(blob, 'voice', ext, type);
+        await send({ kind: 'voice', file_url: up.url, file_path: up.path });
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Recording ----------
     let recorder = null;
     let chunks = [];
 
-    async function sendVoice(blob) {
-      if (blob.size > 5 * 1024 * 1024) {
-        alert('Voice message is too big.');
-        return;
-      }
-
-      const type = (blob.type || 'audio/webm').split(';')[0];
-      const ext = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
-      const path = 'voice-' + uniqueName(ext);
-
-      const { error: uploadError } = await db.storage.from('uploads').upload(path, blob, { contentType: type });
-      if (uploadError) { alert(uploadError.message); return; }
-
-      const { data } = db.storage.from('uploads').getPublicUrl(path);
-
-      const { error } = await db.from('messages').insert({
-        username: getUsername(),
-        kind: 'voice',
-        file_url: data.publicUrl
-      });
-      if (error) alert(error.message);
-    }
-
     async function toggleRecording() {
-      // If already recording, this click stops it.
-      if (recorder && recorder.state === 'recording') {
-        recorder.stop();
-        return;
-      }
+      if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
 
       let stream;
       try {
@@ -171,53 +355,68 @@
       }
 
       chunks = [];
-      const thisRecorder = new MediaRecorder(stream);
-      recorder = thisRecorder;
-
-      thisRecorder.addEventListener('dataavailable', e => {
-        if (e.data.size > 0) chunks.push(e.data);
+      const rec = new MediaRecorder(stream);
+      recorder = rec;
+      rec.addEventListener('dataavailable', e => { if (e.data.size > 0) chunks.push(e.data); });
+      rec.addEventListener('stop', async () => {
+        stream.getTracks().forEach(t => t.stop());
+        $('recBtn').classList.remove('recording');
+        $('recBtn').textContent = '🎤';
+        await sendVoice(new Blob(chunks, { type: rec.mimeType }));
       });
 
-      thisRecorder.addEventListener('stop', async () => {
-        stream.getTracks().forEach(track => track.stop());
-        recBtn.classList.remove('recording');
-        recBtn.textContent = '🎤';
-        const blob = new Blob(chunks, { type: thisRecorder.mimeType });
-        await sendVoice(blob);
-      });
+      rec.start();
+      $('recBtn').classList.add('recording');
+      $('recBtn').textContent = '⏹';
+      setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 60000);
+    }
 
-      thisRecorder.start();
-      recBtn.classList.add('recording');
-      recBtn.textContent = '⏹';
+    // ---------- Deleting ----------
+    async function deleteMessage(m) {
+      if (!confirm('Delete this message for everyone?')) return;
+      const { error } = await db.from('messages').delete().eq('id', m.id);
+      if (error) { alert(error.message); return; }
+      if (m.file_path) await db.storage.from('uploads').remove([m.file_path]);
+      removeMessageEl(m.id);
+    }
 
-      // Safety: stop automatically after 60 seconds.
-      setTimeout(() => {
-        if (thisRecorder.state === 'recording') thisRecorder.stop();
-      }, 60000);
+    // ---------- Profile photo ----------
+    async function changeAvatar(file) {
+      if (file.size > 2 * 1024 * 1024) { alert('Photo is too big. Please choose one under 2 MB.'); return; }
+      try {
+        const up = await uploadFile(file, 'avatars', file.name.split('.').pop());
+        const { error } = await db.from('profiles').update({ avatar_url: up.url }).eq('id', me.id);
+        if (error) throw error;
+        me.avatar_url = up.url;
+        renderMe();
+      } catch (e) { alert(e.message); }
     }
 
     // ---------- Buttons and keys ----------
-    document.getElementById('send').addEventListener('click', sendText);
-    textInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+    $('tabLogin').addEventListener('click', () => setMode('login'));
+    $('tabSignup').addEventListener('click', () => setMode('signup'));
+    $('authGo').addEventListener('click', submitAuth);
+    $('password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+    $('logout').addEventListener('click', () => db.auth.signOut());
 
-    document.getElementById('picBtn').addEventListener('click', () => picInput.click());
-    picInput.addEventListener('change', async () => {
-      const file = picInput.files[0];
-      if (!file) return;
-      await sendImage(file);
-      picInput.value = '';
+    $('send').addEventListener('click', sendText);
+    $('text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+
+    $('picBtn').addEventListener('click', () => $('picInput').click());
+    $('picInput').addEventListener('change', async () => {
+      const file = $('picInput').files[0];
+      if (file) await sendImage(file);
+      $('picInput').value = '';
     });
 
-    recBtn.addEventListener('click', toggleRecording);
+    $('recBtn').addEventListener('click', toggleRecording);
 
-    // ---------- Realtime ----------
-    db.channel('chat')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
-          payload => showMessage(payload.new))
-      .subscribe();
-
-    // ---------- Start ----------
-    loadMessages();
+    $('myAvatar').addEventListener('click', () => $('avatarInput').click());
+    $('avatarInput').addEventListener('change', async () => {
+      const file = $('avatarInput').files[0];
+      if (file) await changeAvatar(file);
+      $('avatarInput').value = '';
+    });
   </script>
 </body>
 </html>
