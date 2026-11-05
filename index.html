@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Chat App</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
+    #messages { border: 1px solid #ccc; height: 400px; overflow-y: auto; padding: 8px; margin: 8px 0; }
+    .msg { margin-bottom: 8px; }
+    .msg b { margin-right: 4px; }
+    #controls { display: flex; gap: 8px; }
+    #text { flex: 1; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>My Chat App</h1>
+  <input id="username" placeholder="Your name">
+  <div id="messages"></div>
+  <div id="controls">
+    <input id="text" placeholder="Type a message...">
+    <button id="send">Send</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = 'https://rxuomzlsocvmastvprfl.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_6slxlQG_i8mroPMK3qjY5g_tC-nrMRD';
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const messagesDiv = document.getElementById('messages');
+    const textInput = document.getElementById('text');
+
+    function showMessage(m) {
+      const div = document.createElement('div');
+      div.className = 'msg';
+      const name = document.createElement('b');
+      name.textContent = m.username + ':';
+      const body = document.createElement('span');
+      body.textContent = m.content;
+      div.append(name, body);
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    async function loadMessages() {
+      const { data, error } = await db.from('messages').select('*').order('created_at');
+      if (error) { console.error(error); return; }
+      data.forEach(showMessage);
+    }
+
+    async function sendText() {
+      const username = document.getElementById('username').value.trim() || 'Anonymous';
+      const text = textInput.value.trim();
+      if (!text) return;
+      const { error } = await db.from('messages').insert({ username, kind: 'text', content: text });
+      if (error) { alert(error.message); return; }
+      textInput.value = '';
+    }
+
+    document.getElementById('send').addEventListener('click', sendText);
+    textInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+
+    db.channel('chat')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+          payload => showMessage(payload.new))
+      .subscribe();
+
+    loadMessages();
+  </script>
+</body>
+</html>
