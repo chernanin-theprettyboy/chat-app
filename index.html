@@ -58,10 +58,21 @@
     .icon.recording { background: #e53935; color: #fff; }
     #send { padding: 10px 18px; border: 0; border-radius: 20px; background: var(--blue); color: #fff; font-weight: 600; }
 
+    .side-scroll { flex: 1; overflow-y: auto; }
+    #search { width: calc(100% - 16px); margin: 0 8px 8px; padding: 9px 14px; border: 0; border-radius: 20px; background: var(--bg); }
+    .sec { padding: 12px 16px 4px; font-size: .8rem; font-weight: 600; color: var(--muted); }
+    .item { display: flex; align-items: center; gap: 12px; margin: 0 8px; padding: 8px 10px; border-radius: 10px; }
+    .item.click { cursor: pointer; }
+    .item.click:hover, .item.active { background: #e7f3ff; }
+    .item .grow { flex: 1; min-width: 0; }
+    .item small { color: var(--muted); }
+    .mini { padding: 5px 12px; border: 0; border-radius: 14px; background: var(--blue); color: #fff; font-size: .8rem; }
+    .mini.grey { background: var(--bubble); color: var(--text); }
+
     @media (max-width: 700px) {
       #sidebar { width: 72px; }
       .side-text { display: none; }
-      .me, .chat-item { justify-content: center; padding-left: 0; padding-right: 0; }
+      .me, .item { justify-content: center; padding-left: 0; padding-right: 0; }
     }
   </style>
 </head>
@@ -91,15 +102,17 @@
         <div id="myAvatar" title="Click to change your photo"></div>
         <div class="side-text"><b id="myName"></b><small>Click photo to change</small></div>
       </div>
-      <div class="title side-text">Chats</div>
-      <div class="chat-item active">
-        <div class="av">#</div>
-        <div class="side-text"><b>Public room</b><small>Everyone</small></div>
+      <input id="search" class="side-text" placeholder="Find people by username">
+      <div id="results" class="side-text"></div>
+      <div class="side-scroll">
+        <div id="requests" class="side-text"></div>
+        <div class="title side-text">Chats</div>
+        <div id="chatList"></div>
       </div>
     </aside>
 
     <main id="chat">
-      <header>Public room <button id="logout" class="link">Log out</button></header>
+      <header><span id="chatTitle">Public room</span> <button id="logout" class="link">Log out</button></header>
       <div id="messages"></div>
       <div id="controls">
         <button id="picBtn" class="icon" title="Send a picture">📷</button>
@@ -127,6 +140,8 @@
     let channel = null;           // the realtime connection
     let started = false;
     let mode = 'login';
+    let currentChat = { id: null, title: 'Public room', friend: null };  // id null = public room
+    let friendships = [];
 
     function el(tag, cls, text) {
       const e = document.createElement(tag);
@@ -204,13 +219,16 @@
       renderMe();
       $('auth').hidden = true;
       $('app').hidden = false;
+      await refreshSocial();
       await loadMessages();
 
-      channel = db.channel('public-room')
+      channel = db.channel('app')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async p => {
+          if ((p.new.conversation_id || null) !== currentChat.id) return;
           await ensureProfile(p.new.user_id);
           showMessage(p.new);
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, () => refreshSocial())
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, p => {
           removeMessageEl(p.old.id);
         })
@@ -223,6 +241,10 @@
       $('password').value = '';
       $('app').hidden = true;
       $('auth').hidden = false;
+      $('search').value = '';
+      $('results').innerHTML = '';
+      currentChat = { id: null, title: 'Public room', friend: null };
+      friendships = [];
       me = null;
     }
 
@@ -295,15 +317,127 @@
     }
 
     async function loadMessages() {
-      const { data, error } = await db.from('messages')
-        .select('*').order('created_at', { ascending: false }).limit(200);
+      let q = db.from('messages').select('*');
+      q = currentChat.id ? q.eq('conversation_id', currentChat.id) : q.is('conversation_id', null);
+      const { data, error } = await q.order('created_at', { ascending: false }).limit(200);
       if (error) { console.error(error); return; }
       data.reverse().forEach(showMessage);
     }
 
+    // ---------- Friends and chats ----------
+    function relationTo(id) {
+      const f = friendships.find(x => x.requester === id || x.addressee === id);
+      if (!f) return null;
+      if (f.status === 'accepted') return 'friends';
+      return f.requester === me.id ? 'sent' : 'incoming';
+    }
+
+    function miniBtn(label, grey, fn) {
+      const b = el('button', 'mini side-text' + (grey ? ' grey' : ''), label);
+      b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+      return b;
+    }
+
+    function personItem(p, extra, onClick) {
+      const item = el('div', 'item' + (onClick ? ' click' : ''));
+      item.append(avatarEl(p), el('div', 'grow side-text', p.username));
+      if (extra) item.append(extra);
+      if (onClick) item.addEventListener('click', onClick);
+      return item;
+    }
+
+    async function refreshSocial() {
+      const { data, error } = await db.from('friendships').select('*');
+      if (error) { console.error(error); return; }
+      friendships = data;
+      for (const f of data) {
+        await ensureProfile(f.requester);
+        await ensureProfile(f.addressee);
+      }
+      renderSocial();
+    }
+
+    function renderSocial() {
+      const box = $('requests');
+      box.innerHTML = '';
+      const incoming = friendships.filter(f => f.status === 'pending' && f.addressee === me.id);
+      if (incoming.length) box.append(el('div', 'sec', 'Friend requests'));
+      incoming.forEach(f => {
+        const p = profiles[f.requester];
+        if (!p) return;
+        const buttons = el('span');
+        buttons.append(miniBtn('Accept', false, () => respond(f, true)), miniBtn('Decline', true, () => respond(f, false)));
+        box.append(personItem(p, buttons));
+      });
+
+      const list = $('chatList');
+      list.innerHTML = '';
+      const pub = el('div', 'item click' + (currentChat.friend ? '' : ' active'));
+      pub.append(el('div', 'av', '#'), el('div', 'grow side-text', 'Public room'));
+      pub.addEventListener('click', () => openChat(null, 'Public room', null));
+      list.append(pub);
+
+      friendships.filter(f => f.status === 'accepted').forEach(f => {
+        const fid = f.requester === me.id ? f.addressee : f.requester;
+        const p = profiles[fid];
+        if (!p) return;
+        const item = personItem(p, null, () => openFriendChat(p));
+        if (currentChat.friend === fid) item.classList.add('active');
+        list.append(item);
+      });
+    }
+
+    async function respond(f, accept) {
+      const q = accept
+        ? db.from('friendships').update({ status: 'accepted' }).eq('id', f.id)
+        : db.from('friendships').delete().eq('id', f.id);
+      const { error } = await q;
+      if (error) alert(error.message);
+      await refreshSocial();
+    }
+
+    async function addFriend(p) {
+      const { error } = await db.from('friendships').insert({ addressee: p.id });
+      if (error) { alert(error.message); return; }
+      await refreshSocial();
+      await searchPeople();
+    }
+
+    async function searchPeople() {
+      const q = $('search').value.trim().replace(/[%_,]/g, '');
+      const box = $('results');
+      box.innerHTML = '';
+      if (q.length < 2) return;
+      const { data, error } = await db.from('profiles').select('*')
+        .ilike('username', '%' + q + '%').neq('id', me.id).limit(8);
+      if (error) { console.error(error); return; }
+      if (!data.length) box.append(el('div', 'sec', 'No one found'));
+      data.forEach(p => {
+        profiles[p.id] = p;
+        const rel = relationTo(p.id);
+        const labels = { friends: 'Friends', sent: 'Requested', incoming: 'Sent you a request' };
+        const extra = rel ? el('small', 'side-text', labels[rel]) : miniBtn('Add', false, () => addFriend(p));
+        box.append(personItem(p, extra));
+      });
+    }
+
+    async function openFriendChat(p) {
+      const { data, error } = await db.rpc('start_chat', { friend: p.id });
+      if (error) { alert(error.message); return; }
+      openChat(data, p.username, p.id);
+    }
+
+    async function openChat(id, title, friend) {
+      currentChat = { id, title, friend };
+      $('chatTitle').textContent = title;
+      $('messages').innerHTML = '';
+      renderSocial();
+      await loadMessages();
+    }
+
     // ---------- Sending ----------
     async function send(fields) {
-      const { error } = await db.from('messages').insert(fields);
+      const { error } = await db.from('messages').insert({ ...fields, conversation_id: currentChat.id });
       if (error) { alert(error.message); return false; }
       return true;
     }
@@ -398,6 +532,7 @@
     $('authGo').addEventListener('click', submitAuth);
     $('password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
     $('logout').addEventListener('click', () => db.auth.signOut());
+    $('search').addEventListener('input', searchPeople);
 
     $('send').addEventListener('click', sendText);
     $('text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
