@@ -16,6 +16,8 @@
     button, input { font: inherit; }
     button { cursor: pointer; }
 
+    .loading { min-height: 100vh; display: grid; place-items: center; color: var(--muted); }
+
     /* ---------- Log in / sign up screen ---------- */
     #auth { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
     .card { width: 100%; max-width: 380px; padding: 28px; background: var(--card); border-radius: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, .1); }
@@ -92,7 +94,9 @@
 <body>
 
   <!-- Log in / sign up -->
-  <div id="auth">
+  <div id="loading" class="loading">Loading…</div>
+
+  <div id="auth" hidden>
     <div class="card">
       <h1>My Chat App</h1>
       <p>Log in or create an account to chat.</p>
@@ -143,7 +147,8 @@
     // ---------- Connection ----------
     const db = supabase.createClient(
       'https://rxuomzlsocvmastvprfl.supabase.co',
-      'sb_publishable_6slxlQG_i8mroPMK3qjY5g_tC-nrMRD'
+      'sb_publishable_6slxlQG_i8mroPMK3qjY5g_tC-nrMRD',
+      { auth: { persistSession: true, autoRefreshToken: true } }
     );
 
     // ---------- Shared state and helpers ----------
@@ -222,16 +227,23 @@
       $('myName').textContent = me.username;
     }
 
+    function showLogin() {
+      $('loading').hidden = true;
+      $('auth').hidden = false;
+    }
+
     async function startApp(user) {
       const { data, error } = await db.from('profiles').select('*');
-      if (error) { alert(error.message); started = false; return; }
+      if (error) { alert(error.message); started = false; showLogin(); return; }
       data.forEach(p => { profiles[p.id] = p; });
       me = profiles[user.id];
-      if (!me) { alert('Profile not found.'); started = false; return; }
+      if (!me) { alert('Profile not found.'); started = false; showLogin(); return; }
 
       renderMe();
+      $('loading').hidden = true;
       $('auth').hidden = true;
       $('app').hidden = false;
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
       await refreshSocial();
       await loadMessages();
 
@@ -271,6 +283,8 @@
       } else if (!session && started) {
         started = false;
         stopApp();
+      } else if (!session && event === 'INITIAL_SESSION') {
+        showLogin();
       }
     });
 
@@ -578,6 +592,8 @@
       if (file) await changeAvatar(file);
       $('avatarInput').value = '';
     });
+
+    setTimeout(() => { if (!started) showLogin(); }, 4000);
 
     // ---------- Make the site installable ----------
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
