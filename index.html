@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My Chat App</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0084ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <style>
     :root { --blue: #0084ff; --bg: #f0f2f5; --card: #fff; --text: #1c1e21; --muted: #65676b; --bubble: #e4e6eb; --line: #dadde1; }
     * { box-sizing: border-box; }
@@ -552,6 +556,9 @@
       if (file) await changeAvatar(file);
       $('avatarInput').value = '';
     });
+
+    // ---------- Make the site installable ----------
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
   </script>
 </body>
 </html>
