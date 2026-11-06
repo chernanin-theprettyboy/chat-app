@@ -29,6 +29,12 @@
     .card input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccd0d5; border-radius: 10px; }
     .primary { width: 100%; padding: 12px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 600; }
     #authMsg { min-height: 1.2em; margin: 8px 0 0; font-size: .9rem; color: #d93025; }
+    #authMsg.ok { color: #188038; }
+    .pw { position: relative; }
+    .pw input { padding-right: 44px; }
+    .pw button { position: absolute; right: 6px; top: 6px; padding: 6px; border: 0; background: none; font-size: 1.1rem; }
+    #forgot { display: block; margin: 12px auto 0; }
+    .primary:disabled { opacity: .6; cursor: default; }
 
     /* ---------- Main app ---------- */
     #app { display: flex; height: 100vh; height: 100dvh; }
@@ -99,15 +105,19 @@
   <div id="auth" hidden>
     <div class="card">
       <h1>My Chat App</h1>
-      <p>Log in or create an account to chat.</p>
-      <div class="tabs">
+      <p id="authSub">Log in or create an account to chat.</p>
+      <div class="tabs" id="tabs">
         <button id="tabLogin" class="on">Log in</button>
         <button id="tabSignup">Sign up</button>
       </div>
       <input id="suUser" placeholder="Username" autocomplete="username" hidden>
       <input id="email" type="email" placeholder="Email" autocomplete="email">
-      <input id="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+      <div class="pw">
+        <input id="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+        <button id="showPw" type="button" title="Show or hide password">👁</button>
+      </div>
       <button id="authGo" class="primary">Log in</button>
+      <button id="forgot" class="link">Forgot password?</button>
       <p id="authMsg"></p>
     </div>
   </div>
@@ -184,41 +194,76 @@
       return el('div', cls, name[0].toUpperCase());
     }
 
-    // ---------- Log in / sign up ----------
+    // ---------- Log in / sign up / reset password ----------
+    let recovering = location.hash.includes('type=recovery');
+
+    function say(text, ok) {
+      $('authMsg').textContent = text;
+      $('authMsg').className = ok ? 'ok' : '';
+    }
+
     function setMode(m) {
       mode = m;
+      const reset = m === 'reset';
+      $('tabs').hidden = reset;
       $('tabLogin').classList.toggle('on', m === 'login');
       $('tabSignup').classList.toggle('on', m === 'signup');
-      $('suUser').hidden = m === 'login';
-      $('authGo').textContent = m === 'login' ? 'Log in' : 'Create account';
-      $('authMsg').textContent = '';
+      $('suUser').hidden = m !== 'signup';
+      $('email').hidden = reset;
+      $('forgot').hidden = m !== 'login';
+      $('password').placeholder = reset ? 'New password (6+ characters)' : 'Password (6+ characters)';
+      $('password').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+      $('authGo').textContent = { login: 'Log in', signup: 'Create account', reset: 'Save new password' }[m];
+      $('authSub').textContent = reset ? 'Choose a new password.' : 'Log in or create an account to chat.';
+      say('');
+    }
+
+    function friendlyError(msg) {
+      if (/invalid login/i.test(msg)) return 'Wrong email or password.';
+      if (/not confirmed/i.test(msg)) return 'Please confirm your email first. Check your inbox.';
+      if (/rate limit/i.test(msg)) return 'Too many emails sent. Please wait a while and try again.';
+      if (/already registered/i.test(msg)) return 'This email already has an account. Try logging in.';
+      if (/database error/i.test(msg)) return 'That username may already be taken.';
+      return msg;
     }
 
     async function submitAuth() {
       const email = $('email').value.trim();
       const password = $('password').value;
-      const msg = $('authMsg');
-      msg.textContent = '';
+      if (mode !== 'reset' && !email) return say('Please enter your email.');
+      if (password.length < 6) return say('Password must be at least 6 characters.');
 
-      if (mode === 'signup') {
-        const username = $('suUser').value.trim();
-        if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
-          msg.textContent = 'Username: 3-20 letters, numbers or _';
-          return;
+      $('authGo').disabled = true;
+      say('Please wait…', true);
+      try {
+        if (mode === 'signup') {
+          const username = $('suUser').value.trim();
+          if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return say('Username: 3-20 letters, numbers or _');
+          const { data, error } = await db.auth.signUp({ email, password, options: { data: { username } } });
+          if (error) return say(friendlyError(error.message));
+          say(data.session ? '' : 'Account created. Check your email, then log in.', true);
+        } else if (mode === 'reset') {
+          const { error } = await db.auth.updateUser({ password });
+          if (error) return say(friendlyError(error.message));
+          recovering = false;
+          history.replaceState(null, '', location.pathname);
+          const { data: s } = await db.auth.getSession();
+          if (s.session && !started) { started = true; startApp(s.session.user); }
+        } else {
+          const { error } = await db.auth.signInWithPassword({ email, password });
+          if (error) return say(friendlyError(error.message));
+          say('');
         }
-        const { data, error } = await db.auth.signUp({
-          email, password, options: { data: { username } }
-        });
-        if (error) {
-          msg.textContent = /database error/i.test(error.message)
-            ? 'That username may already be taken.' : error.message;
-          return;
-        }
-        if (!data.session) msg.textContent = 'Account created. Check your email, then log in.';
-      } else {
-        const { error } = await db.auth.signInWithPassword({ email, password });
-        if (error) msg.textContent = error.message;
+      } finally {
+        $('authGo').disabled = false;
       }
+    }
+
+    async function forgotPassword() {
+      const email = $('email').value.trim();
+      if (!email) return say('Type your email above first, then press "Forgot password?".');
+      const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      say(error ? friendlyError(error.message) : 'If that email has an account, a reset link is on its way.', !error);
     }
 
     // ---------- Start and stop the app ----------
@@ -277,6 +322,8 @@
 
     // Wait a tick before calling Supabase from inside this listener
     db.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') recovering = true;
+      if (recovering && session) { setMode('reset'); showLogin(); return; }
       if (session && !started) {
         started = true;
         setTimeout(() => startApp(session.user), 0);
@@ -561,7 +608,12 @@
     $('tabLogin').addEventListener('click', () => setMode('login'));
     $('tabSignup').addEventListener('click', () => setMode('signup'));
     $('authGo').addEventListener('click', submitAuth);
-    $('password').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+    ['suUser', 'email', 'password'].forEach(id =>
+      $(id).addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); }));
+    $('forgot').addEventListener('click', forgotPassword);
+    $('showPw').addEventListener('click', () => {
+      $('password').type = $('password').type === 'password' ? 'text' : 'password';
+    });
     $('logout').addEventListener('click', () => db.auth.signOut());
     $('backBtn').addEventListener('click', () => $('app').classList.remove('in-chat'));
 
